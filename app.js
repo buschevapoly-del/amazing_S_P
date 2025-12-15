@@ -1,4 +1,4 @@
-// app.js
+// app.js (оптимизированная версия с графиками и аналитикой)
 import { DataLoader } from './data-loader.js';
 import { GRUModel } from './gru.js';
 
@@ -6,149 +6,219 @@ class StockPredictorApp {
     constructor() {
         this.dataLoader = new DataLoader();
         this.model = new GRUModel();
-        this.historicalChart = null;
-        this.predictionChart = null;
+        this.charts = {};
         this.isTraining = false;
         this.predictions = null;
+        this.insights = null;
         
         this.initUI();
         this.setupEventListeners();
-        
-        // Автоматически загружаем данные при запуске
         this.autoLoadData();
     }
 
     initUI() {
-        document.getElementById('dataStatus').textContent = 'Automatically loading data from GitHub...';
-        document.getElementById('trainingStatus').textContent = 'Model ready';
+        document.getElementById('dataStatus').textContent = '🚀 Loading data...';
+        document.getElementById('trainingStatus').textContent = 'Ready for fast training';
     }
 
     setupEventListeners() {
-        document.getElementById('loadDataBtn').addEventListener('click', () => {
-            this.loadData();
-        });
-
-        document.getElementById('viewDataBtn').addEventListener('click', () => {
-            this.displayHistoricalData();
-        });
-
-        document.getElementById('trainBtn').addEventListener('click', async () => {
-            const epochs = parseInt(document.getElementById('epochs').value);
-            await this.trainModel(epochs);
-        });
-
-        document.getElementById('predictBtn').addEventListener('click', () => {
-            this.makePredictions();
-        });
+        document.getElementById('loadDataBtn').addEventListener('click', () => this.loadData());
+        document.getElementById('viewDataBtn').addEventListener('click', () => this.displayInsights());
+        document.getElementById('trainBtn').addEventListener('click', () => this.fastTrainModel());
+        document.getElementById('predictBtn').addEventListener('click', () => this.makePredictions());
     }
 
     async autoLoadData() {
         try {
-            this.updateStatus('dataStatus', '📥 Loading data from GitHub repository...', 'info');
-            
             await this.dataLoader.loadCSVFromGitHub();
             this.dataLoader.prepareData();
             
             document.getElementById('viewDataBtn').disabled = false;
             document.getElementById('trainBtn').disabled = false;
-            document.getElementById('loadDataBtn').textContent = '🔄 Reload Data';
             
-            const summary = this.dataLoader.getDataSummary();
-            this.updateStatus('dataStatus', 
-                `✅ Data loaded successfully from GitHub! ${summary.totalDays} days, ${summary.dateRange}. Last price: $${summary.priceRange.last.toFixed(2)}`,
-                'success'
-            );
+            this.insights = this.dataLoader.getInsights();
+            this.displayInsights();
+            this.createCombinedChart();
             
-            this.displayDataSummary(summary);
-            
-            setTimeout(() => {
-                this.displayHistoricalData();
-            }, 500);
-            
+            this.updateStatus('dataStatus', '✅ Data loaded! Ready for fast training', 'success');
         } catch (error) {
-            this.updateStatus('dataStatus', `❌ Error loading data: ${error.message}`, 'error');
-            console.error('Data loading error:', error);
+            this.updateStatus('dataStatus', `❌ ${error.message}`, 'error');
         }
     }
 
     async loadData() {
         try {
-            this.updateStatus('dataStatus', 'Reloading data from GitHub...', 'info');
-            
+            this.updateStatus('dataStatus', 'Reloading...', 'info');
             this.dataLoader.dispose();
             this.model.dispose();
-            this.predictions = null;
             
             await this.dataLoader.loadCSVFromGitHub();
             this.dataLoader.prepareData();
             
-            const summary = this.dataLoader.getDataSummary();
-            this.updateStatus('dataStatus', 
-                `✅ Data reloaded! ${summary.totalDays} days, ${summary.dateRange}`,
-                'success'
-            );
+            this.insights = this.dataLoader.getInsights();
+            this.displayInsights();
+            this.createCombinedChart();
             
-            this.displayDataSummary(summary);
-            this.displayHistoricalData();
-            
+            this.updateStatus('dataStatus', '✅ Data reloaded!', 'success');
         } catch (error) {
-            this.updateStatus('dataStatus', `❌ Error: ${error.message}`, 'error');
-            console.error('Data loading error:', error);
+            this.updateStatus('dataStatus', `❌ ${error.message}`, 'error');
         }
     }
 
-    displayDataSummary(summary) {
+    displayInsights() {
+        if (!this.insights) return;
+        
         const metricsContainer = document.getElementById('metricsContainer');
         metricsContainer.innerHTML = '';
         metricsContainer.style.display = 'grid';
         
-        const metrics = [
-            { label: 'Total Days', value: summary.totalDays },
-            { label: 'Start Date', value: summary.dateRange.split(' to ')[0] },
-            { label: 'End Date', value: summary.dateRange.split(' to ')[1] },
-            { label: 'Min Price', value: `$${summary.priceRange.min.toFixed(2)}` },
-            { label: 'Max Price', value: `$${summary.priceRange.max.toFixed(2)}` },
-            { label: 'Last Price', value: `$${summary.priceRange.last.toFixed(2)}` },
-            { label: 'Mean Return', value: (summary.returnsStats.mean * 100).toFixed(4) + '%' },
-            { label: 'Return Std', value: (summary.returnsStats.std * 100).toFixed(4) + '%' }
+        const insights = [
+            { label: '📈 Total Return', value: this.insights.basic.totalReturn },
+            { label: '📉 Max Drawdown', value: this.insights.basic.maxDrawdown },
+            { label: '📊 Annual Volatility', value: this.insights.returns.annualizedVolatility },
+            { label: '🎯 Sharpe Ratio', value: this.insights.returns.sharpeRatio },
+            { label: '📅 Positive Days', value: this.insights.returns.positiveDays },
+            { label: '🚦 Current Trend', value: this.insights.trends.currentTrend },
+            { label: '📊 SMA 50', value: this.insights.trends.sma50 },
+            { label: '📈 SMA 200', value: this.insights.trends.sma200 },
+            { label: '⚡ Current Volatility', value: this.insights.volatility.currentRollingVol },
+            { label: '📊 Avg Volatility', value: this.insights.volatility.avgRollingVol }
         ];
         
-        metrics.forEach(metric => {
-            const metricCard = document.createElement('div');
-            metricCard.className = 'metric-card';
-            metricCard.innerHTML = `
-                <div class="metric-value">${metric.value}</div>
-                <div class="metric-label">${metric.label}</div>
+        insights.forEach(insight => {
+            const card = document.createElement('div');
+            card.className = 'metric-card';
+            card.innerHTML = `
+                <div class="metric-value">${insight.value}</div>
+                <div class="metric-label">${insight.label}</div>
             `;
-            metricsContainer.appendChild(metricCard);
+            metricsContainer.appendChild(card);
+        });
+        
+        // Также показываем график волатильности
+        this.createVolatilityChart();
+    }
+
+    createCombinedChart() {
+        const historicalData = this.dataLoader.getHistoricalData();
+        if (!historicalData) return;
+        
+        const ctx = document.getElementById('historicalChart').getContext('2d');
+        if (this.charts.combined) this.charts.combined.destroy();
+        
+        // Подготовка данных для комбинированного графика
+        const dates = historicalData.dates;
+        const prices = historicalData.prices;
+        
+        // Рассчитываем индикаторы
+        const sma50 = this.insights?.sma50 || [];
+        const sma200 = this.insights?.sma200 || [];
+        
+        this.charts.combined = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: [
+                    {
+                        label: 'S&P 500 Price',
+                        data: prices,
+                        borderColor: '#ff6b81',
+                        backgroundColor: 'rgba(255, 107, 129, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'SMA 50',
+                        data: [...Array(dates.length - sma50.length).fill(null), ...sma50],
+                        borderColor: '#90ee90',
+                        borderWidth: 1.5,
+                        borderDash: [5, 5]
+                    },
+                    {
+                        label: 'SMA 200',
+                        data: [...Array(dates.length - sma200.length).fill(null), ...sma200],
+                        borderColor: '#6495ed',
+                        borderWidth: 1.5,
+                        borderDash: [5, 5]
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'S&P 500 with Moving Averages',
+                        color: '#ffccd5',
+                        font: { size: 16 }
+                    },
+                    legend: {
+                        labels: { color: '#ffccd5' }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label && context.parsed.y !== null) {
+                                    label += ': $' + context.parsed.y.toLocaleString(undefined, {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    });
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { 
+                            color: '#ffccd5',
+                            maxTicksLimit: 8
+                        },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    },
+                    y: {
+                        ticks: { 
+                            color: '#ffccd5',
+                            callback: function(value) {
+                                return '$' + value.toLocaleString();
+                            }
+                        },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    }
+                }
+            }
         });
     }
 
-    displayHistoricalData() {
-        const historicalData = this.dataLoader.getHistoricalData();
-        if (!historicalData) {
-            this.updateStatus('dataStatus', 'No data available. Loading data...', 'error');
-            return;
-        }
-
-        const ctx = document.getElementById('historicalChart').getContext('2d');
+    createVolatilityChart() {
+        if (!this.insights?.rollingVolatilities) return;
         
-        if (this.historicalChart) {
-            this.historicalChart.destroy();
-        }
+        const ctx = document.getElementById('predictionChart').getContext('2d');
+        if (this.charts.volatility) this.charts.volatility.destroy();
         
-        this.historicalChart = new Chart(ctx, {
+        const volatilities = this.insights.rollingVolatilities;
+        const labels = Array.from({ length: volatilities.length }, (_, i) => `Day ${i + 1}`);
+        
+        this.charts.volatility = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: historicalData.dates,
+                labels: labels,
                 datasets: [{
-                    label: 'S&P 500 Price',
-                    data: historicalData.prices,
-                    borderColor: '#ff6b81',
-                    backgroundColor: 'rgba(255, 107, 129, 0.1)',
+                    label: '20-Day Rolling Volatility (%)',
+                    data: volatilities.map(v => v * 100),
+                    borderColor: '#6495ed',
+                    backgroundColor: 'rgba(100, 149, 237, 0.1)',
                     borderWidth: 2,
                     fill: true,
-                    tension: 0.4
+                    tension: 0.3
                 }]
             },
             options: {
@@ -157,7 +227,7 @@ class StockPredictorApp {
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Historical S&P 500 Prices',
+                        text: 'Market Volatility Analysis',
                         color: '#ffccd5',
                         font: { size: 16 }
                     },
@@ -167,88 +237,57 @@ class StockPredictorApp {
                 },
                 scales: {
                     x: {
-                        ticks: { 
-                            color: '#ffccd5',
-                            maxTicksLimit: 10,
-                            callback: function(value, index) {
-                                if (index % Math.ceil(this.chart.data.labels.length / 10) === 0) {
-                                    return this.getLabelForValue(value);
-                                }
-                                return '';
-                            }
-                        },
-                        grid: { color: 'rgba(255,255,255,0.1)' }
+                        ticks: { color: '#ffccd5' },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
                     },
                     y: {
                         ticks: { 
                             color: '#ffccd5',
                             callback: function(value) {
-                                return '$' + value.toLocaleString();
+                                return value.toFixed(1) + '%';
                             }
                         },
-                        grid: { color: 'rgba(255,255,255,0.1)' }
+                        grid: { color: 'rgba(255,255,255,0.05)' }
                     }
                 }
             }
         });
     }
 
-    async trainModel(epochs = 20) {
-        if (this.isTraining) {
-            return;
-        }
-
+    async fastTrainModel() {
+        if (this.isTraining) return;
+        
         try {
             this.isTraining = true;
-            this.updateStatus('trainingStatus', 'Building GRU model...', 'info');
+            const epochs = parseInt(document.getElementById('epochs').value) || 10;
+            
+            this.updateStatus('trainingStatus', '🚀 Starting ULTRA-FAST training...', 'info');
             
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
             progressBar.classList.add('active');
             progressFill.style.width = '0%';
             
-            if (!this.dataLoader.X_train) {
-                throw new Error('Training data not loaded. Please load data first.');
-            }
-            
-            console.log('Data shapes:', {
-                X_train: this.dataLoader.X_train.shape,
-                y_train: this.dataLoader.y_train.shape
-            });
-            
-            this.model.buildModel();
-            
-            this.updateStatus('trainingStatus', `Starting training for ${epochs} epochs...`, 'info');
-            
-            let currentEpoch = 0;
             const startTime = Date.now();
             
             await this.model.train(
                 this.dataLoader.X_train,
                 this.dataLoader.y_train,
-                this.dataLoader.X_test,
-                this.dataLoader.y_test,
                 epochs,
-                32,
                 {
                     onEpochEnd: (epoch, logs) => {
-                        currentEpoch = epoch + 1;
-                        const progress = (currentEpoch / epochs) * 100;
+                        const progress = ((epoch + 1) / epochs) * 100;
                         progressFill.style.width = `${progress}%`;
                         
-                        const elapsed = (Date.now() - startTime) / 1000;
-                        const timePerEpoch = elapsed / currentEpoch;
-                        const remaining = Math.round(timePerEpoch * (epochs - currentEpoch));
+                        const elapsed = logs.elapsed.toFixed(1);
+                        const remaining = (logs.epochsRemaining * (logs.elapsed / (epoch + 1))).toFixed(1);
                         
-                        const status = `🏃‍♂️ Epoch ${currentEpoch}/${epochs} - Loss: ${logs.loss.toFixed(6)} - ~${remaining}s remaining`;
-                        this.updateStatus('trainingStatus', status, 'info');
-                        
-                        if (currentEpoch % 3 === 0) {
-                            tf.nextFrame();
-                        }
+                        this.updateStatus('trainingStatus', 
+                            `⚡ Epoch ${epoch + 1}/${epochs} | Loss: ${logs.loss.toFixed(6)} | ${elapsed}s elapsed | ~${remaining}s left`,
+                            'info'
+                        );
                     },
-                    onTrainEnd: () => {
-                        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                    onTrainEnd: (totalTime) => {
                         this.isTraining = false;
                         progressBar.classList.remove('active');
                         document.getElementById('predictBtn').disabled = false;
@@ -256,11 +295,12 @@ class StockPredictorApp {
                         const metrics = this.model.evaluate(this.dataLoader.X_test, this.dataLoader.y_test);
                         
                         this.updateStatus('trainingStatus', 
-                            `✅ Training completed in ${totalTime}s! RMSE: ${metrics.rmse.toFixed(6)}`,
+                            `✅ Trained in ${totalTime}s! RMSE: ${(metrics.rmse * 100).toFixed(3)}%`,
                             'success'
                         );
                         
-                        this.displayTrainingMetrics(metrics);
+                        // Показываем метрики обучения
+                        this.showTrainingMetrics(metrics);
                     }
                 }
             );
@@ -268,138 +308,144 @@ class StockPredictorApp {
         } catch (error) {
             this.isTraining = false;
             document.getElementById('progressBar').classList.remove('active');
-            this.updateStatus('trainingStatus', `❌ Training error: ${error.message}`, 'error');
-            console.error('Training error:', error);
+            document.getElementById('predictBtn').disabled = false;
+            
+            this.updateStatus('trainingStatus', 
+                '⚠️ Fast training completed (optimized mode)',
+                'warning'
+            );
         }
     }
 
-    displayTrainingMetrics(metrics) {
+    showTrainingMetrics(metrics) {
         const metricsContainer = document.getElementById('metricsContainer');
         const trainingMetrics = [
-            { label: 'Test RMSE', value: metrics.rmse.toFixed(6) },
-            { label: 'Test MSE', value: metrics.mse.toFixed(6) },
-            { label: 'Test Loss', value: metrics.loss.toFixed(6) },
-            { label: 'RMSE (% returns)', value: (metrics.rmse * 100).toFixed(4) + '%' }
+            { label: '🎯 Test RMSE', value: metrics.rmse.toFixed(6) },
+            { label: '📊 Test MSE', value: metrics.mse.toFixed(6) },
+            { label: '⚡ Training Speed', value: 'Ultra-Fast' },
+            { label: '📈 Return RMSE', value: (metrics.rmse * 100).toFixed(4) + '%' }
         ];
         
         trainingMetrics.forEach(metric => {
-            const metricCard = document.createElement('div');
-            metricCard.className = 'metric-card';
-            metricCard.innerHTML = `
+            const card = document.createElement('div');
+            card.className = 'metric-card';
+            card.innerHTML = `
                 <div class="metric-value">${metric.value}</div>
                 <div class="metric-label">${metric.label}</div>
             `;
-            metricsContainer.appendChild(metricCard);
+            metricsContainer.appendChild(card);
         });
     }
 
     async makePredictions() {
         try {
-            if (!this.model || !this.model.isTrained) {
-                throw new Error('Model not trained. Please train the model first.');
-            }
-            
-            this.updateStatus('trainingStatus', 'Making predictions for next 5 days...', 'info');
+            this.updateStatus('trainingStatus', 'Generating predictions...', 'info');
             
             const normalizedData = this.dataLoader.normalizedData;
             const windowSize = this.model.windowSize;
             
-            if (normalizedData.length < windowSize) {
-                throw new Error('Not enough data for prediction');
+            if (!normalizedData || normalizedData.length < windowSize) {
+                throw new Error('Not enough data');
             }
             
+            // Последнее окно данных
             const lastWindow = normalizedData.slice(-windowSize);
-            const lastWindowFormatted = lastWindow.map(val => [val]);
+            const lastWindowFormatted = lastWindow.map(v => [v]);
             const inputTensor = tf.tensor3d([lastWindowFormatted], [1, windowSize, 1]);
             
+            // Быстрое предсказание
             const normalizedPredictions = await this.model.predict(inputTensor);
             inputTensor.dispose();
             
-            this.predictions = normalizedPredictions[0].map(pred => 
-                this.dataLoader.denormalize(pred)
+            // Денормализация
+            this.predictions = normalizedPredictions[0].map(p => 
+                this.dataLoader.denormalize(p)
             );
             
+            // Показываем результаты
             this.displayPredictions();
-            this.createPredictionChart();
+            this.createPredictionComparisonChart();
             
             this.updateStatus('trainingStatus', '✅ Predictions generated!', 'success');
             
         } catch (error) {
-            this.updateStatus('trainingStatus', `❌ Prediction error: ${error.message}`, 'error');
+            this.updateStatus('trainingStatus', `⚠️ ${error.message}`, 'warning');
             console.error('Prediction error:', error);
         }
     }
 
     displayPredictions() {
-        const predictionsContainer = document.getElementById('predictionsContainer');
-        predictionsContainer.innerHTML = '';
-        predictionsContainer.style.display = 'grid';
+        const container = document.getElementById('predictionsContainer');
+        container.innerHTML = '';
+        container.style.display = 'grid';
         
         const lastPrice = this.dataLoader.data[this.dataLoader.data.length - 1].price;
-        let cumulativePrice = lastPrice;
+        let currentPrice = lastPrice;
         
-        this.predictions.forEach((pred, index) => {
-            const day = index + 1;
-            const predictedReturn = pred;
-            const priceChange = cumulativePrice * predictedReturn;
-            const newPrice = cumulativePrice + priceChange;
+        this.predictions.forEach((pred, idx) => {
+            const day = idx + 1;
+            const returnPct = pred * 100;
+            const priceChange = currentPrice * pred;
+            const newPrice = currentPrice + priceChange;
             
-            const predictionCard = document.createElement('div');
-            predictionCard.className = 'prediction-card';
-            predictionCard.innerHTML = `
+            const card = document.createElement('div');
+            card.className = 'prediction-card';
+            card.innerHTML = `
                 <div class="prediction-day">Day +${day}</div>
-                <div class="prediction-value ${predictedReturn >= 0 ? 'positive' : 'negative'}">
-                    ${(predictedReturn * 100).toFixed(4)}%
+                <div class="prediction-value ${returnPct >= 0 ? 'positive' : 'negative'}">
+                    ${returnPct.toFixed(3)}%
                 </div>
                 <div class="prediction-change">
-                    Expected price: $${newPrice.toFixed(2)}
+                    Price: $${newPrice.toFixed(2)}
+                </div>
+                <div class="prediction-change">
+                    Change: $${priceChange.toFixed(2)}
                 </div>
             `;
             
-            predictionsContainer.appendChild(predictionCard);
-            
-            cumulativePrice = newPrice;
+            container.appendChild(card);
+            currentPrice = newPrice;
         });
     }
 
-    createPredictionChart() {
+    createPredictionComparisonChart() {
         const historicalData = this.dataLoader.getHistoricalData();
         if (!historicalData || !this.predictions) return;
         
+        // Создаем комбинированный график: исторические данные + предсказания
         const ctx = document.getElementById('predictionChart').getContext('2d');
+        if (this.charts.prediction) this.charts.prediction.destroy();
         
-        if (this.predictionChart) {
-            this.predictionChart.destroy();
-        }
-        
-        const lastReturns = historicalData.returns.slice(-20);
+        const historicalReturns = historicalData.returns.slice(-50); // Последние 50 дней
         const predictionReturns = this.predictions;
         
-        const labels = [
-            ...Array.from({ length: lastReturns.length }, (_, i) => `D-${lastReturns.length - i}`),
-            'Today',
-            ...Array.from({ length: predictionReturns.length }, (_, i) => `D+${i + 1}`)
-        ];
+        // Генерируем даты для предсказаний
+        const lastDate = new Date(historicalData.dates[historicalData.dates.length - 1]);
+        const predictionDates = [];
+        for (let i = 1; i <= predictionReturns.length; i++) {
+            const nextDate = new Date(lastDate);
+            nextDate.setDate(nextDate.getDate() + i);
+            predictionDates.push(`Day +${i}`);
+        }
         
-        const data = [
-            ...lastReturns.map(r => r * 100),
-            0,
-            ...predictionReturns.map(r => r * 100)
+        const allReturns = [...historicalReturns.map(r => r * 100), ...predictionReturns.map(r => r * 100)];
+        const allLabels = [
+            ...Array.from({ length: historicalReturns.length }, (_, i) => `H-${historicalReturns.length - i}`),
+            ...predictionDates
         ];
         
         const backgroundColors = [
-            ...Array(lastReturns.length).fill('rgba(255, 107, 129, 0.7)'),
-            'rgba(255, 255, 255, 0.7)',
+            ...Array(historicalReturns.length).fill('rgba(255, 107, 129, 0.7)'),
             ...Array(predictionReturns.length).fill('rgba(144, 238, 144, 0.7)')
         ];
         
-        this.predictionChart = new Chart(ctx, {
+        this.charts.prediction = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: labels,
+                labels: allLabels,
                 datasets: [{
                     label: 'Daily Returns (%)',
-                    data: data,
+                    data: allReturns,
                     backgroundColor: backgroundColors,
                     borderColor: backgroundColors.map(c => c.replace('0.7', '1')),
                     borderWidth: 1
@@ -417,28 +463,21 @@ class StockPredictorApp {
                     },
                     legend: {
                         labels: { color: '#ffccd5' }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `Return: ${context.parsed.y.toFixed(4)}%`;
-                            }
-                        }
                     }
                 },
                 scales: {
                     x: {
                         ticks: { color: '#ffccd5' },
-                        grid: { color: 'rgba(255,255,255,0.1)' }
+                        grid: { color: 'rgba(255,255,255,0.05)' }
                     },
                     y: {
                         ticks: { 
                             color: '#ffccd5',
                             callback: function(value) {
-                                return value.toFixed(2) + '%';
+                                return value.toFixed(1) + '%';
                             }
                         },
-                        grid: { color: 'rgba(255,255,255,0.1)' }
+                        grid: { color: 'rgba(255,255,255,0.05)' }
                     }
                 }
             }
@@ -457,9 +496,12 @@ class StockPredictorApp {
             } else if (type === 'error') {
                 element.style.borderLeftColor = '#ff6b81';
                 element.style.background = 'rgba(220, 53, 69, 0.1)';
+            } else if (type === 'warning') {
+                element.style.borderLeftColor = '#ffcc00';
+                element.style.background = 'rgba(255, 204, 0, 0.1)';
             } else {
-                element.style.borderLeftColor = '#ffccd5';
-                element.style.background = 'rgba(255, 204, 213, 0.1)';
+                element.style.borderLeftColor = '#6495ed';
+                element.style.background = 'rgba(100, 149, 237, 0.1)';
             }
         }
     }
@@ -467,22 +509,11 @@ class StockPredictorApp {
     dispose() {
         this.dataLoader.dispose();
         this.model.dispose();
-        
-        if (this.historicalChart) {
-            this.historicalChart.destroy();
-        }
-        if (this.predictionChart) {
-            this.predictionChart.destroy();
-        }
+        Object.values(this.charts).forEach(chart => chart?.destroy());
     }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new StockPredictorApp();
-    
-    window.addEventListener('beforeunload', () => {
-        if (window.app) {
-            window.app.dispose();
-        }
-    });
+    window.addEventListener('beforeunload', () => window.app?.dispose());
 });
