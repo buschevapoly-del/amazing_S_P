@@ -1,4 +1,4 @@
-// gru.js
+// gru.js (исправленная версия)
 class GRUModel {
     constructor(windowSize = 60, predictionHorizon = 5) {
         this.windowSize = windowSize;
@@ -49,7 +49,7 @@ class GRUModel {
             X_shape: X_train?.shape, 
             y_shape: y_train?.shape,
             epochs: epochs,
-            callbacks: typeof callbacks 
+            hasCallbacks: !!callbacks
         });
         
         if (!this.model) {
@@ -61,74 +61,86 @@ class GRUModel {
             throw new Error('Training data not provided');
         }
         
-        if (typeof epochs === 'object') {
-            callbacks = epochs;
-            epochs = 12;
+        // Проверяем, что у нас есть данные
+        if (X_train.shape[0] === 0 || y_train.shape[0] === 0) {
+            throw new Error('No training samples available');
         }
-        
-        if (typeof epochs !== 'number' || isNaN(epochs)) {
-            epochs = 12;
-        }
-        
-        epochs = Math.max(1, Math.floor(epochs));
         
         const sampleCount = X_train.shape[0];
         const batchSize = Math.min(this.batchSize, sampleCount);
         
         console.log(`Training: epochs=${epochs}, batch=${batchSize}, samples=${sampleCount}`);
         
+        const startTime = Date.now();
+        let currentEpoch = 0;
+        
         try {
-            const startTime = Date.now();
-            
-            this.trainingHistory = await this.model.fit(X_train, y_train, {
-                epochs: epochs,
-                batchSize: batchSize,
-                validationSplit: 0.1,
-                verbose: 0,
-                shuffle: false,
-                callbacks: {
-                    onEpochEnd: async (epoch, logs) => {
-                        const currentEpoch = epoch + 1;
-                        
-                        if (callbacks.onEpochEnd) {
-                            try {
-                                callbacks.onEpochEnd(epoch, {
-                                    ...logs,
-                                    elapsed: (Date.now() - startTime) / 1000,
-                                    progress: (currentEpoch / epochs) * 100
-                                });
-                            } catch (e) {
-                                console.warn('Callback error:', e);
-                            }
-                        }
-                        
-                        if (epoch % 3 === 0) {
-                            await tf.nextFrame();
-                        }
-                    },
-                    onTrainEnd: () => {
-                        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-                        this.isTrained = true;
-                        
-                        if (callbacks.onTrainEnd) {
-                            try {
-                                callbacks.onTrainEnd(totalTime);
-                            } catch (e) {
-                                console.warn('Callback error:', e);
-                            }
-                        }
-                        
-                        console.log(`✅ Training completed in ${totalTime}s`);
+            // Используем простой цикл для обучения с прогрессом
+            for (let epoch = 0; epoch < epochs; epoch++) {
+                currentEpoch = epoch;
+                
+                // Выполняем одну эпоху обучения
+                const history = await this.model.fit(X_train, y_train, {
+                    epochs: 1,
+                    batchSize: batchSize,
+                    validationSplit: 0.1,
+                    verbose: 0,
+                    shuffle: false
+                });
+                
+                const loss = history.history.loss[0];
+                const valLoss = history.history.val_loss ? history.history.val_loss[0] : null;
+                
+                // Вызываем callback для эпохи
+                if (callbacks.onEpochEnd) {
+                    try {
+                        callbacks.onEpochEnd(epoch, {
+                            loss: loss,
+                            val_loss: valLoss,
+                            elapsed: (Date.now() - startTime) / 1000,
+                            progress: ((epoch + 1) / epochs) * 100
+                        });
+                    } catch (e) {
+                        console.warn('Callback error:', e);
                     }
                 }
-            });
+                
+                // Даем возможность обновить UI
+                if (epoch % 1 === 0) {
+                    await tf.nextFrame();
+                }
+            }
             
             this.isTrained = true;
-            return this.trainingHistory;
+            
+            // Вызываем callback окончания обучения
+            if (callbacks.onTrainEnd) {
+                try {
+                    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+                    callbacks.onTrainEnd(totalTime);
+                } catch (e) {
+                    console.warn('Callback error:', e);
+                }
+            }
+            
+            console.log(`✅ Training completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+            return { success: true };
             
         } catch (error) {
             console.error('Training error:', error);
+            
+            // Даже если ошибка, помечаем как обученную для возможности предсказаний
             this.isTrained = true;
+            
+            // Вызываем callback окончания с ошибкой
+            if (callbacks.onTrainEnd) {
+                try {
+                    callbacks.onTrainEnd(0);
+                } catch (e) {
+                    console.warn('Callback error:', e);
+                }
+            }
+            
             throw error;
         }
     }
