@@ -1,4 +1,4 @@
-// app.js (обновленная версия с графиком тестовых предсказаний)
+// app.js (версия с автотреннигом и одной кнопкой предсказаний)
 import { DataLoader } from './data-loader.js';
 import { GRUModel } from './gru.js';
 
@@ -10,8 +10,7 @@ class StockPredictorApp {
             combined: null,
             volatility: null,
             prediction: null,
-            returnsComparison: null,
-            testPredictions: null // Новый график
+            returnsComparison: null
         };
         this.isTraining = false;
         this.predictions = null;
@@ -125,33 +124,22 @@ class StockPredictorApp {
                 throw new Error('Training data not available.');
             }
             
-            console.log('New model architecture training...');
-            
             // Create minimal callback for auto-training
             const callbacks = {
                 onEpochEnd: (epoch, logs) => {
                     const lossMsg = logs.loss ? `Loss: ${logs.loss.toFixed(6)}` : '';
-                    const valMsg = logs.val_loss ? ` | Val: ${logs.val_loss.toFixed(6)}` : '';
                     this.updateStatus('trainingStatus', 
-                        `⚡ Auto-training ${epoch + 1}/5 ${lossMsg}${valMsg}`,
+                        `⚡ Auto-training ${epoch + 1}/5 ${lossMsg}`,
                         'info'
                     );
                 },
                 onTrainEnd: (totalTime) => {
                     this.isTraining = false;
                     this.isModelTrained = true;
-                    
-                    // Оцениваем модель и создаем график тестовых предсказаний
-                    const metrics = this.model.evaluate(this.dataLoader.X_test, this.dataLoader.y_test);
-                    this.createTestPredictionsChart();
-                    
                     this.updateStatus('trainingStatus', 
-                        `✅ Model auto-trained! RMSE: ${(metrics.rmse * 100).toFixed(3)}%`,
+                        `✅ Model auto-trained! Ready for predictions`,
                         'success'
                     );
-                    
-                    // Показываем метрики обучения
-                    this.showTrainingMetrics(metrics);
                 }
             };
             
@@ -217,156 +205,6 @@ class StockPredictorApp {
         // Создаем график волатильности
         this.createVolatilityChart();
     }
-
-    createTestPredictionsChart() {
-        const testData = this.model.getTestChartData();
-        if (!testData) return;
-        
-        // Уничтожаем старый график если есть
-        this.destroyChart('testPredictions');
-        
-        // Создаем контейнер для графика если его нет
-        let chartContainer = document.getElementById('testPredictionsChart');
-        if (!chartContainer) {
-            chartContainer = document.createElement('div');
-            chartContainer.className = 'chart-container';
-            chartContainer.id = 'testPredictionsChart';
-            chartContainer.style.height = '350px';
-            chartContainer.style.marginTop = '20px';
-            
-            // Добавляем заголовок
-            const title = document.createElement('h2');
-            title.className = 'card-title';
-            title.textContent = '📊 Model Validation: Predicted vs Actual Returns';
-            title.style.marginBottom = '15px';
-            
-            // Вставляем перед predictions grid
-            const predictionsContainer = document.querySelector('.predictions-grid');
-            if (predictionsContainer && predictionsContainer.parentNode) {
-                predictionsContainer.parentNode.insertBefore(title, predictionsContainer);
-                predictionsContainer.parentNode.insertBefore(chartContainer, predictionsContainer);
-            }
-        }
-        
-        const ctx = chartContainer.getContext('2d');
-        
-        // Конвертируем возвраты в проценты для лучшей читаемости
-        const predictions = testData.predictions.map(p => p * 100);
-        const actuals = testData.actuals.map(a => a * 100);
-        
-        this.charts.testPredictions = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: testData.indices.map(i => `Sample ${i + 1}`),
-                datasets: [
-                    {
-                        label: 'Actual Returns',
-                        data: actuals,
-                        borderColor: '#ff6b81',
-                        backgroundColor: 'rgba(255, 107, 129, 0.1)',
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.1,
-                        pointRadius: 3,
-                        pointHoverRadius: 6
-                    },
-                    {
-                        label: 'Predicted Returns',
-                        data: predictions,
-                        borderColor: '#6495ed',
-                        backgroundColor: 'rgba(100, 149, 237, 0.1)',
-                        borderWidth: 2,
-                        fill: false,
-                        tension: 0.1,
-                        borderDash: [5, 5],
-                        pointRadius: 3,
-                        pointHoverRadius: 6
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Model Performance on Test Data',
-                        color: '#ffccd5',
-                        font: { size: 14, weight: 'normal' }
-                    },
-                    legend: {
-                        labels: {
-                            color: '#ffccd5',
-                            font: { size: 11 }
-                        },
-                        position: 'top',
-                        align: 'center'
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                        titleColor: '#ffccd5',
-                        bodyColor: '#ffccd5',
-                        borderColor: '#ff6b81',
-                        borderWidth: 1,
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (label && context.parsed.y !== null) {
-                                    label += ': ' + context.parsed.y.toFixed(3) + '%';
-                                }
-                                return label;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: { 
-                            color: '#ffccd5',
-                            font: { size: 10 },
-                            maxTicksLimit: 10
-                        },
-                        grid: { 
-                            color: 'rgba(255,255,255,0.05)',
-                            drawBorder: false
-                        },
-                        title: {
-                            display: true,
-                            text: 'Test Samples',
-                            color: '#ffccd5',
-                            font: { size: 12 }
-                        }
-                    },
-                    y: {
-                        ticks: { 
-                            color: '#ffccd5',
-                            font: { size: 10 },
-                            callback: function(value) {
-                                return value.toFixed(2) + '%';
-                            }
-                        },
-                        grid: { 
-                            color: 'rgba(255,255,255,0.05)',
-                            drawBorder: false
-                        },
-                        title: {
-                            display: true,
-                            text: 'Return (%)',
-                            color: '#ffccd5',
-                            font: { size: 12 }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Остальные методы остаются такими же как в предыдущей версии
-    // ... (createCombinedChart, createVolatilityChart, showTrainingMetrics, makePredictions, displayPredictions, createReturnsComparisonChart, updateStatus, dispose)
 
     createCombinedChart() {
         const historicalData = this.dataLoader.getHistoricalData();
@@ -587,26 +425,6 @@ class StockPredictorApp {
         });
     }
 
-    showTrainingMetrics(metrics) {
-        const metricsContainer = document.getElementById('metricsContainer');
-        const trainingMetrics = [
-            { label: '🎯 Test RMSE', value: metrics.rmse.toFixed(6) },
-            { label: '📊 Test MSE', value: metrics.mse.toFixed(6) },
-            { label: '⚡ Model Status', value: 'Trained' },
-            { label: '📈 Return Error', value: (metrics.rmse * 100).toFixed(4) + '%' }
-        ];
-        
-        trainingMetrics.forEach(metric => {
-            const card = document.createElement('div');
-            card.className = 'insight-card fade-in';
-            card.innerHTML = `
-                <div class="insight-value">${metric.value}</div>
-                <div class="insight-label">${metric.label}</div>
-            `;
-            metricsContainer.appendChild(card);
-        });
-    }
-
     async makePredictions() {
         try {
             this.updateStatus('trainingStatus', 'Generating predictions...', 'info');
@@ -618,26 +436,19 @@ class StockPredictorApp {
                 throw new Error('Not enough data');
             }
             
-            // Для новой модели нам нужно делать предсказания по одному дню
-            // и использовать предсказания как вход для следующих дней
+            // Последнее окно данных
+            const lastWindow = normalizedData.slice(-windowSize);
+            const lastWindowFormatted = lastWindow.map(v => [v]);
+            const inputTensor = tf.tensor3d([lastWindowFormatted], [1, windowSize, 1]);
             
-            let currentWindow = normalizedData.slice(-windowSize);
-            const predictions = [];
-            
-            for (let i = 0; i < this.model.predictionHorizon; i++) {
-                const input = tf.tensor3d([currentWindow.map(v => [v])], [1, windowSize, 1]);
-                const pred = await this.model.predict(input);
-                input.dispose();
-                
-                const nextPred = pred[0][0];
-                predictions.push(nextPred);
-                
-                // Обновляем окно для следующего предсказания
-                currentWindow = [...currentWindow.slice(1), nextPred];
-            }
+            // Быстрое предсказание
+            const normalizedPredictions = await this.model.predict(inputTensor);
+            inputTensor.dispose();
             
             // Денормализация
-            this.predictions = predictions.map(p => this.dataLoader.denormalize(p));
+            this.predictions = normalizedPredictions[0].map(p => 
+                this.dataLoader.denormalize(p)
+            );
             
             // Показываем результаты
             this.displayPredictions();
@@ -694,15 +505,17 @@ class StockPredictorApp {
         
         const ctx = document.getElementById('predictionChart').getContext('2d');
         
-        const historicalReturns = historicalData.returns.slice(-30);
+        const historicalReturns = historicalData.returns.slice(-30); // Последние 30 дней
         const predictionReturns = this.predictions;
         
+        // Создаем комбинированный массив
         const allReturns = [...historicalReturns, ...predictionReturns];
         const allLabels = [
             ...Array.from({ length: historicalReturns.length }, (_, i) => `H-${historicalReturns.length - i}`),
             ...Array.from({ length: predictionReturns.length }, (_, i) => `P+${i + 1}`)
         ];
         
+        // Цвета: исторические - один цвет, предсказания - другой
         const backgroundColors = allReturns.map((_, index) => 
             index < historicalReturns.length 
                 ? 'rgba(255, 107, 129, 0.6)' 
