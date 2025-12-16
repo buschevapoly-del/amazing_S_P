@@ -1,4 +1,4 @@
-// app.js (полная исправленная версия)
+// app.js (версия с автотреннигом и одной кнопкой предсказаний)
 import { DataLoader } from './data-loader.js';
 import { GRUModel } from './gru.js';
 
@@ -15,6 +15,7 @@ class StockPredictorApp {
         this.isTraining = false;
         this.predictions = null;
         this.insights = null;
+        this.isModelTrained = false;
         
         this.initUI();
         this.setupEventListeners();
@@ -23,14 +24,27 @@ class StockPredictorApp {
 
     initUI() {
         document.getElementById('dataStatus').textContent = '🚀 Loading data...';
-        document.getElementById('trainingStatus').textContent = 'Ready for fast training';
+        document.getElementById('trainingStatus').textContent = 'Model will auto-train with 5 epochs';
+        
+        // Скрываем элементы связанные с тренировкой
+        const epochsInput = document.getElementById('epochs');
+        const trainBtn = document.getElementById('trainBtn');
+        if (epochsInput) epochsInput.style.display = 'none';
+        if (trainBtn) trainBtn.style.display = 'none';
+        
+        // Меняем текст кнопки предсказаний
+        const predictBtn = document.getElementById('predictBtn');
+        if (predictBtn) {
+            predictBtn.textContent = '🔮 Show Predictions';
+            predictBtn.disabled = true;
+        }
     }
 
     setupEventListeners() {
         document.getElementById('loadDataBtn').addEventListener('click', () => this.loadData());
         document.getElementById('viewDataBtn').addEventListener('click', () => this.displayInsights());
-        document.getElementById('trainBtn').addEventListener('click', () => this.fastTrainModel());
-        document.getElementById('predictBtn').addEventListener('click', () => this.makePredictions());
+        // Убираем обработчик для trainBtn и оставляем только predictBtn
+        document.getElementById('predictBtn').addEventListener('click', () => this.autoTrainAndPredict());
     }
 
     destroyChart(chartName) {
@@ -50,14 +64,18 @@ class StockPredictorApp {
             this.dataLoader.prepareData();
             
             document.getElementById('viewDataBtn').disabled = false;
-            document.getElementById('trainBtn').disabled = false;
+            document.getElementById('predictBtn').disabled = false;
             document.getElementById('loadDataBtn').innerHTML = '🔄 Reload Data';
             
             this.insights = this.dataLoader.getInsights();
             this.displayInsights();
             this.createCombinedChart();
             
-            this.updateStatus('dataStatus', '✅ Data loaded! Ready for fast training', 'success');
+            this.updateStatus('dataStatus', '✅ Data loaded! Click "Show Predictions"', 'success');
+            
+            // Автотреннинг модели при загрузке данных
+            await this.autoTrainModel();
+            
         } catch (error) {
             this.updateStatus('dataStatus', `❌ ${error.message}`, 'error');
         }
@@ -68,6 +86,7 @@ class StockPredictorApp {
             this.updateStatus('dataStatus', 'Reloading...', 'info');
             this.dataLoader.dispose();
             this.model.dispose();
+            this.isModelTrained = false;
             
             // Уничтожаем все графики
             Object.keys(this.charts).forEach(chart => this.destroyChart(chart));
@@ -80,8 +99,76 @@ class StockPredictorApp {
             this.createCombinedChart();
             
             this.updateStatus('dataStatus', '✅ Data reloaded!', 'success');
+            
+            // Автотреннинг модели после перезагрузки данных
+            await this.autoTrainModel();
+            
         } catch (error) {
             this.updateStatus('dataStatus', `❌ ${error.message}`, 'error');
+        }
+    }
+
+    async autoTrainModel() {
+        if (this.isTraining || this.isModelTrained) return;
+        
+        try {
+            this.isTraining = true;
+            const epochs = 5; // Фиксированные 5 эпох
+            
+            this.updateStatus('trainingStatus', '🚀 Auto-training model (5 epochs)...', 'info');
+            
+            const startTime = Date.now();
+            
+            // Ensure data is ready
+            if (!this.dataLoader.X_train || !this.dataLoader.y_train) {
+                throw new Error('Training data not available.');
+            }
+            
+            // Create minimal callback for auto-training
+            const callbacks = {
+                onEpochEnd: (epoch, logs) => {
+                    const lossMsg = logs.loss ? `Loss: ${logs.loss.toFixed(6)}` : '';
+                    this.updateStatus('trainingStatus', 
+                        `⚡ Auto-training ${epoch + 1}/5 ${lossMsg}`,
+                        'info'
+                    );
+                },
+                onTrainEnd: (totalTime) => {
+                    this.isTraining = false;
+                    this.isModelTrained = true;
+                    this.updateStatus('trainingStatus', 
+                        `✅ Model auto-trained! Ready for predictions`,
+                        'success'
+                    );
+                }
+            };
+            
+            // Call the train method
+            await this.model.train(this.dataLoader.X_train, this.dataLoader.y_train, epochs, callbacks);
+            
+        } catch (error) {
+            this.isTraining = false;
+            this.isModelTrained = false;
+            console.error('Auto-training error:', error);
+            this.updateStatus('trainingStatus', 
+                `⚠️ Auto-training failed: ${error.message}`,
+                'warning'
+            );
+        }
+    }
+
+    async autoTrainAndPredict() {
+        if (!this.isModelTrained) {
+            await this.autoTrainModel();
+        }
+        
+        if (this.isModelTrained) {
+            await this.makePredictions();
+        } else {
+            this.updateStatus('trainingStatus', 
+                '⚠️ Model not trained yet. Please wait...',
+                'warning'
+            );
         }
     }
 
@@ -335,105 +422,6 @@ class StockPredictorApp {
                     }
                 }
             }
-        });
-    }
-
-    async fastTrainModel() {
-        if (this.isTraining) return;
-        
-        try {
-            this.isTraining = true;
-            const epochs = parseInt(document.getElementById('epochs').value) || 12;
-            
-            this.updateStatus('trainingStatus', '🚀 Starting ultra-fast training...', 'info');
-            
-            const progressBar = document.getElementById('progressBar');
-            const progressFill = document.getElementById('progressFill');
-            progressBar.style.display = 'block';
-            progressFill.style.width = '0%';
-            
-            const startTime = Date.now();
-            
-            // Ensure data is ready
-            if (!this.dataLoader.X_train || !this.dataLoader.y_train) {
-                throw new Error('Training data not available. Please load data first.');
-            }
-            
-            console.log('Data shapes:', {
-                X_train: this.dataLoader.X_train.shape,
-                y_train: this.dataLoader.y_train.shape,
-                X_test: this.dataLoader.X_test.shape,
-                y_test: this.dataLoader.y_test.shape
-            });
-            
-            // Create callback object
-            const callbacks = {
-                onEpochEnd: (epoch, logs) => {
-                    const progress = ((epoch + 1) / epochs) * 100;
-                    progressFill.style.width = `${progress}%`;
-                    
-                    const lossMsg = logs.loss ? `Loss: ${logs.loss.toFixed(6)}` : 'Training...';
-                    const valMsg = logs.val_loss ? ` | Val: ${logs.val_loss.toFixed(6)}` : '';
-                    
-                    this.updateStatus('trainingStatus', 
-                        `⚡ Epoch ${epoch + 1}/${epochs} | ${lossMsg}${valMsg}`,
-                        'info'
-                    );
-                },
-                onTrainEnd: (totalTime) => {
-                    this.isTraining = false;
-                    progressBar.style.display = 'none';
-                    document.getElementById('predictBtn').disabled = false;
-                    
-                    // Try to evaluate, but don't crash if it fails
-                    try {
-                        const metrics = this.model.evaluate(this.dataLoader.X_test, this.dataLoader.y_test);
-                        this.updateStatus('trainingStatus', 
-                            `✅ Training completed in ${totalTime}s! RMSE: ${(metrics.rmse * 100).toFixed(3)}%`,
-                            'success'
-                        );
-                        this.showTrainingMetrics(metrics);
-                    } catch (e) {
-                        this.updateStatus('trainingStatus', 
-                            `✅ Training completed in ${totalTime}s!`,
-                            'success'
-                        );
-                    }
-                }
-            };
-            
-            // Call the train method
-            await this.model.train(this.dataLoader.X_train, this.dataLoader.y_train, epochs, callbacks);
-            
-        } catch (error) {
-            this.isTraining = false;
-            document.getElementById('progressBar').style.display = 'none';
-            
-            console.error('Training error:', error);
-            this.updateStatus('trainingStatus', 
-                `❌ Training failed: ${error.message}`,
-                'error'
-            );
-        }
-    }
-
-    showTrainingMetrics(metrics) {
-        const metricsContainer = document.getElementById('metricsContainer');
-        const trainingMetrics = [
-            { label: '🎯 Test RMSE', value: metrics.rmse.toFixed(6) },
-            { label: '📊 Test MSE', value: metrics.mse.toFixed(6) },
-            { label: '⚡ Model Status', value: 'Trained' },
-            { label: '📈 Return Error', value: (metrics.rmse * 100).toFixed(4) + '%' }
-        ];
-        
-        trainingMetrics.forEach(metric => {
-            const card = document.createElement('div');
-            card.className = 'insight-card fade-in';
-            card.innerHTML = `
-                <div class="insight-value">${metric.value}</div>
-                <div class="insight-label">${metric.label}</div>
-            `;
-            metricsContainer.appendChild(card);
         });
     }
 
