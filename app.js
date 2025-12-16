@@ -24,6 +24,15 @@ class StockPredictorApp {
     initUI() {
         document.getElementById('dataStatus').textContent = '🚀 Loading data...';
         document.getElementById('trainingStatus').textContent = 'Ready for fast training';
+        
+        // Add a simple check for the train button
+        const trainBtn = document.getElementById('trainBtn');
+        trainBtn.addEventListener('click', () => {
+            console.log('Train button clicked');
+            console.log('Data loader ready:', !!this.dataLoader.data);
+            console.log('X_train shape:', this.dataLoader.X_train?.shape);
+            console.log('y_train shape:', this.dataLoader.y_train?.shape);
+        });
     }
 
     setupEventListeners() {
@@ -354,49 +363,58 @@ class StockPredictorApp {
             
             const startTime = Date.now();
             
-            await this.model.train(
-                this.dataLoader.X_train,
-                this.dataLoader.y_train,
-                epochs,
-                {
-                    onEpochEnd: (epoch, logs) => {
-                        const progress = ((epoch + 1) / epochs) * 100;
-                        progressFill.style.width = `${progress}%`;
-                        
-                        const elapsed = logs.elapsed?.toFixed(1) || '0';
-                        const remaining = logs.epochsRemaining || 0;
-                        
-                        this.updateStatus('trainingStatus', 
-                            `⚡ Epoch ${epoch + 1}/${epochs} | Loss: ${logs.loss?.toFixed(6) || '0.000000'}`,
-                            'info'
-                        );
-                    },
-                    onTrainEnd: (totalTime) => {
-                        this.isTraining = false;
-                        progressBar.style.display = 'none';
-                        document.getElementById('predictBtn').disabled = false;
-                        
-                        const metrics = this.model.evaluate(this.dataLoader.X_test, this.dataLoader.y_test);
-                        
-                        this.updateStatus('trainingStatus', 
-                            `✅ Training completed! RMSE: ${(metrics.rmse * 100).toFixed(3)}%`,
-                            'success'
-                        );
-                        
-                        // Показываем метрики обучения
-                        this.showTrainingMetrics(metrics);
-                    }
+            // First, ensure the model is built
+            if (!this.model.model) {
+                this.model.buildModel();
+            }
+            
+            // Create callback object correctly
+            const callbacks = {
+                onEpochEnd: (epoch, logs) => {
+                    const progress = ((epoch + 1) / epochs) * 100;
+                    progressFill.style.width = `${progress}%`;
+                    
+                    this.updateStatus('trainingStatus', 
+                        `⚡ Epoch ${epoch + 1}/${epochs} | Loss: ${logs?.loss?.toFixed(6) || '0.000000'}`,
+                        'info'
+                    );
+                },
+                onTrainEnd: (totalTime) => {
+                    this.isTraining = false;
+                    progressBar.style.display = 'none';
+                    document.getElementById('predictBtn').disabled = false;
+                    
+                    // Evaluate the model
+                    const metrics = this.model.evaluate(this.dataLoader.X_test, this.dataLoader.y_test);
+                    
+                    this.updateStatus('trainingStatus', 
+                        `✅ Training completed! RMSE: ${(metrics.rmse * 100).toFixed(3)}%`,
+                        'success'
+                    );
+                    
+                    // Show training metrics
+                    this.showTrainingMetrics(metrics);
                 }
-            );
+            };
+            
+            console.log('Starting training with:', {
+                X_train_shape: this.dataLoader.X_train?.shape,
+                y_train_shape: this.dataLoader.y_train?.shape,
+                epochs: epochs
+            });
+            
+            // Call the train method with correct parameters
+            await this.model.train(this.dataLoader.X_train, this.dataLoader.y_train, epochs, callbacks);
             
         } catch (error) {
             this.isTraining = false;
             document.getElementById('progressBar').style.display = 'none';
             document.getElementById('predictBtn').disabled = false;
             
+            console.error('Training error:', error);
             this.updateStatus('trainingStatus', 
-                '⚠️ Training completed (optimized mode)',
-                'warning'
+                `⚠️ Training error: ${error.message}`,
+                'error'
             );
         }
     }
