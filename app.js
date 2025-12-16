@@ -823,4 +823,5 @@ class StockPredictorApp {
 
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new StockPredictorApp();
-    window.addEventListener('beforeunload
+    window.addEventListener('beforeunload', () => window.app?.dispose());
+});
