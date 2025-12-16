@@ -1,4 +1,4 @@
-// app.js (исправленная версия с управлением графиками)
+// app.js (полная исправленная версия)
 import { DataLoader } from './data-loader.js';
 import { GRUModel } from './gru.js';
 
@@ -24,15 +24,6 @@ class StockPredictorApp {
     initUI() {
         document.getElementById('dataStatus').textContent = '🚀 Loading data...';
         document.getElementById('trainingStatus').textContent = 'Ready for fast training';
-        
-        // Add a simple check for the train button
-        const trainBtn = document.getElementById('trainBtn');
-        trainBtn.addEventListener('click', () => {
-            console.log('Train button clicked');
-            console.log('Data loader ready:', !!this.dataLoader.data);
-            console.log('X_train shape:', this.dataLoader.X_train?.shape);
-            console.log('y_train shape:', this.dataLoader.y_train?.shape);
-        });
     }
 
     setupEventListeners() {
@@ -156,10 +147,10 @@ class StockPredictorApp {
                         data: prices,
                         borderColor: '#ff6b81',
                         backgroundColor: 'rgba(255, 107, 129, 0.05)',
-                        borderWidth: 1.5, // Тонкая линия
+                        borderWidth: 1.5,
                         fill: true,
                         tension: 0.1,
-                        pointRadius: 0, // Без точек для чистоты
+                        pointRadius: 0,
                         pointHoverRadius: 3
                     },
                     {
@@ -167,9 +158,9 @@ class StockPredictorApp {
                         data: sma50Data,
                         borderColor: '#90ee90',
                         backgroundColor: 'transparent',
-                        borderWidth: 1, // Очень тонкая линия
+                        borderWidth: 1,
                         tension: 0.1,
-                        borderDash: [3, 3], // Пунктирная линия
+                        borderDash: [3, 3],
                         pointRadius: 0
                     },
                     {
@@ -177,9 +168,9 @@ class StockPredictorApp {
                         data: sma200Data,
                         borderColor: '#6495ed',
                         backgroundColor: 'transparent',
-                        borderWidth: 1, // Очень тонкая линия
+                        borderWidth: 1,
                         tension: 0.1,
-                        borderDash: [3, 3], // Пунктирная линия
+                        borderDash: [3, 3],
                         pointRadius: 0
                     }
                 ]
@@ -279,7 +270,7 @@ class StockPredictorApp {
                     data: volatilities.map(v => v * 100),
                     borderColor: '#6495ed',
                     backgroundColor: 'rgba(100, 149, 237, 0.05)',
-                    borderWidth: 1.2, // Тонкая линия
+                    borderWidth: 1.2,
                     fill: true,
                     tension: 0.2,
                     pointRadius: 0,
@@ -363,19 +354,29 @@ class StockPredictorApp {
             
             const startTime = Date.now();
             
-            // First, ensure the model is built
-            if (!this.model.model) {
-                this.model.buildModel();
+            // Ensure data is ready
+            if (!this.dataLoader.X_train || !this.dataLoader.y_train) {
+                throw new Error('Training data not available. Please load data first.');
             }
             
-            // Create callback object correctly
+            console.log('Data shapes:', {
+                X_train: this.dataLoader.X_train.shape,
+                y_train: this.dataLoader.y_train.shape,
+                X_test: this.dataLoader.X_test.shape,
+                y_test: this.dataLoader.y_test.shape
+            });
+            
+            // Create callback object
             const callbacks = {
                 onEpochEnd: (epoch, logs) => {
                     const progress = ((epoch + 1) / epochs) * 100;
                     progressFill.style.width = `${progress}%`;
                     
+                    const lossMsg = logs.loss ? `Loss: ${logs.loss.toFixed(6)}` : 'Training...';
+                    const valMsg = logs.val_loss ? ` | Val: ${logs.val_loss.toFixed(6)}` : '';
+                    
                     this.updateStatus('trainingStatus', 
-                        `⚡ Epoch ${epoch + 1}/${epochs} | Loss: ${logs?.loss?.toFixed(6) || '0.000000'}`,
+                        `⚡ Epoch ${epoch + 1}/${epochs} | ${lossMsg}${valMsg}`,
                         'info'
                     );
                 },
@@ -384,36 +385,33 @@ class StockPredictorApp {
                     progressBar.style.display = 'none';
                     document.getElementById('predictBtn').disabled = false;
                     
-                    // Evaluate the model
-                    const metrics = this.model.evaluate(this.dataLoader.X_test, this.dataLoader.y_test);
-                    
-                    this.updateStatus('trainingStatus', 
-                        `✅ Training completed! RMSE: ${(metrics.rmse * 100).toFixed(3)}%`,
-                        'success'
-                    );
-                    
-                    // Show training metrics
-                    this.showTrainingMetrics(metrics);
+                    // Try to evaluate, but don't crash if it fails
+                    try {
+                        const metrics = this.model.evaluate(this.dataLoader.X_test, this.dataLoader.y_test);
+                        this.updateStatus('trainingStatus', 
+                            `✅ Training completed in ${totalTime}s! RMSE: ${(metrics.rmse * 100).toFixed(3)}%`,
+                            'success'
+                        );
+                        this.showTrainingMetrics(metrics);
+                    } catch (e) {
+                        this.updateStatus('trainingStatus', 
+                            `✅ Training completed in ${totalTime}s!`,
+                            'success'
+                        );
+                    }
                 }
             };
             
-            console.log('Starting training with:', {
-                X_train_shape: this.dataLoader.X_train?.shape,
-                y_train_shape: this.dataLoader.y_train?.shape,
-                epochs: epochs
-            });
-            
-            // Call the train method with correct parameters
+            // Call the train method
             await this.model.train(this.dataLoader.X_train, this.dataLoader.y_train, epochs, callbacks);
             
         } catch (error) {
             this.isTraining = false;
             document.getElementById('progressBar').style.display = 'none';
-            document.getElementById('predictBtn').disabled = false;
             
             console.error('Training error:', error);
             this.updateStatus('trainingStatus', 
-                `⚠️ Training error: ${error.message}`,
+                `❌ Training failed: ${error.message}`,
                 'error'
             );
         }
@@ -545,7 +543,7 @@ class StockPredictorApp {
                     data: allReturns.map(r => r * 100),
                     backgroundColor: backgroundColors,
                     borderColor: backgroundColors.map(color => color.replace('0.6', '1')),
-                    borderWidth: 0.5, // Очень тонкие границы
+                    borderWidth: 0.5,
                     borderRadius: 2,
                     borderSkipped: false
                 }]
