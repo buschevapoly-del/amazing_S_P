@@ -44,7 +44,7 @@ class GRUModel {
         return this.model;
     }
 
-    async train(X_train, y_train, epochs = 12, callbacks = {}) {
+    async train(X_train, y_train, epochs = 30, callbacks = {}) {
         console.log('Train method called with:', { 
             X_shape: X_train?.shape, 
             y_shape: y_train?.shape,
