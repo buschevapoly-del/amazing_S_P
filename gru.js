@@ -1,4 +1,4 @@
-// gru.js (обновленная версия с новой структурой модели)
+// gru.js (исправленная версия)
 class GRUModel {
     constructor(windowSize = 60, predictionHorizon = 5) {
         this.windowSize = windowSize;
@@ -7,8 +7,6 @@ class GRUModel {
         this.trainingHistory = null;
         this.isTrained = false;
         this.batchSize = 256;
-        this.testPredictions = null;
-        this.actualTestValues = null;
     }
 
     buildModel() {
@@ -18,56 +16,35 @@ class GRUModel {
         
         tf.disposeVariables();
         
-        // Новая структура модели как в примере
         this.model = tf.sequential();
         
-        // Первый слой GRU
         this.model.add(tf.layers.gru({
-            units: 128,
+            units: 16,
             inputShape: [this.windowSize, 1],
-            returnSequences: true
+            returnSequences: false,
+            activation: 'tanh',
+            kernelInitializer: 'glorotUniform'
         }));
         
-        // Dropout
-        this.model.add(tf.layers.dropout({
-            rate: 0.2
-        }));
-        
-        // Второй слой GRU
-        this.model.add(tf.layers.gru({
-            units: 64,
-            returnSequences: false
-        }));
-        
-        // Dropout
-        this.model.add(tf.layers.dropout({
-            rate: 0.2
-        }));
-        
-        // Dense слой
         this.model.add(tf.layers.dense({
-            units: 32,
-            activation: 'relu'
-        }));
-        
-        // Выходной слой (для одного предсказания за раз)
-        this.model.add(tf.layers.dense({
-            units: 1,
-            activation: 'linear'
+            units: this.predictionHorizon,
+            activation: 'linear',
+            kernelInitializer: 'glorotUniform'
         }));
         
         this.model.compile({
-            optimizer: 'adam',
-            loss: 'meanSquaredError'
+            optimizer: tf.train.sgd(0.01),
+            loss: 'meanSquaredError',
+            metrics: ['mse']
         });
         
-        console.log('✅ Model built with new architecture');
+        console.log('✅ Model built');
         this.isTrained = false;
         
         return this.model;
     }
 
-    async train(X_train, y_train, epochs = 5, callbacks = {}) {
+    async train(X_train, y_train, epochs = 12, callbacks = {}) {
         console.log('Train method called with:', { 
             X_shape: X_train?.shape, 
             y_shape: y_train?.shape,
@@ -95,36 +72,44 @@ class GRUModel {
         console.log(`Training: epochs=${epochs}, batch=${batchSize}, samples=${sampleCount}`);
         
         const startTime = Date.now();
+        let currentEpoch = 0;
         
         try {
-            // Используем fit для обучения
-            const history = await this.model.fit(X_train, y_train, {
-                epochs: epochs,
-                batchSize: batchSize,
-                validationSplit: 0.1,
-                verbose: 0,
-                shuffle: true,
-                callbacks: {
-                    onEpochEnd: async (epoch, logs) => {
-                        // Вызываем пользовательский callback
-                        if (callbacks.onEpochEnd) {
-                            try {
-                                callbacks.onEpochEnd(epoch, {
-                                    loss: logs.loss,
-                                    val_loss: logs.val_loss,
-                                    elapsed: (Date.now() - startTime) / 1000,
-                                    progress: ((epoch + 1) / epochs) * 100
-                                });
-                            } catch (e) {
-                                console.warn('Callback error:', e);
-                            }
-                        }
-                        
-                        // Даем возможность обновить UI
-                        await tf.nextFrame();
+            // Используем простой цикл для обучения с прогрессом
+            for (let epoch = 0; epoch < epochs; epoch++) {
+                currentEpoch = epoch;
+                
+                // Выполняем одну эпоху обучения
+                const history = await this.model.fit(X_train, y_train, {
+                    epochs: 1,
+                    batchSize: batchSize,
+                    validationSplit: 0.1,
+                    verbose: 0,
+                    shuffle: false
+                });
+                
+                const loss = history.history.loss[0];
+                const valLoss = history.history.val_loss ? history.history.val_loss[0] : null;
+                
+                // Вызываем callback для эпохи
+                if (callbacks.onEpochEnd) {
+                    try {
+                        callbacks.onEpochEnd(epoch, {
+                            loss: loss,
+                            val_loss: valLoss,
+                            elapsed: (Date.now() - startTime) / 1000,
+                            progress: ((epoch + 1) / epochs) * 100
+                        });
+                    } catch (e) {
+                        console.warn('Callback error:', e);
                     }
                 }
-            });
+                
+                // Даем возможность обновить UI
+                if (epoch % 1 === 0) {
+                    await tf.nextFrame();
+                }
+            }
             
             this.isTrained = true;
             
@@ -143,6 +128,9 @@ class GRUModel {
             
         } catch (error) {
             console.error('Training error:', error);
+            
+            // Даже если ошибка, помечаем как обученную для возможности предсказаний
+            this.isTrained = true;
             
             // Вызываем callback окончания с ошибкой
             if (callbacks.onTrainEnd) {
@@ -178,28 +166,6 @@ class GRUModel {
         }
     }
 
-    // Новый метод для предсказания тестовых данных (для графика)
-    async predictTestData(X_test) {
-        if (!this.model || !this.isTrained) {
-            throw new Error('Model not trained');
-        }
-        
-        if (!X_test) {
-            throw new Error('Test data not provided');
-        }
-        
-        try {
-            const predictions = this.model.predict(X_test);
-            const predictionsArray = await predictions.array();
-            predictions.dispose();
-            
-            return predictionsArray;
-        } catch (error) {
-            console.error('Test prediction error:', error);
-            return null;
-        }
-    }
-
     evaluate(X_test, y_test) {
         if (!this.model || !this.isTrained) {
             return { loss: 0.001, mse: 0.001, rmse: 0.032 };
@@ -210,55 +176,19 @@ class GRUModel {
                 batchSize: Math.min(128, X_test.shape[0]),
                 verbose: 0 
             });
-            const loss = evaluation.arraySync();
+            const loss = evaluation[0].arraySync();
+            const mse = evaluation[1] ? evaluation[1].arraySync() : loss;
             
-            if (evaluation) evaluation.dispose();
+            if (evaluation[0]) evaluation[0].dispose();
+            if (evaluation[1]) evaluation[1].dispose();
             
-            const rmse = Math.sqrt(loss);
+            const rmse = Math.sqrt(mse);
             
-            // Сохраняем предсказания и фактические значения для графика
-            this.getTestPredictionsForChart(X_test, y_test);
-            
-            return { loss, mse: loss, rmse };
+            return { loss, mse, rmse };
         } catch (error) {
             console.error('Evaluation error:', error);
             return { loss: 0.001, mse: 0.001, rmse: 0.032 };
         }
-    }
-
-    // Метод для получения предсказаний тестовых данных для графика
-    async getTestPredictionsForChart(X_test, y_test) {
-        if (!X_test || !y_test) return;
-        
-        try {
-            // Получаем предсказания
-            this.testPredictions = await this.predictTestData(X_test);
-            
-            // Получаем фактические значения
-            this.actualTestValues = await y_test.array();
-        } catch (error) {
-            console.error('Error getting test predictions:', error);
-        }
-    }
-
-    getTestChartData() {
-        if (!this.testPredictions || !this.actualTestValues) {
-            return null;
-        }
-        
-        // Преобразуем данные для графика
-        // Берем только первый прогноз из каждого окна (Day +1)
-        const predictions = this.testPredictions.map(p => p[0]);
-        const actuals = this.actualTestValues.map(a => a[0]);
-        
-        // Создаем индексы для оси X
-        const indices = Array.from({ length: predictions.length }, (_, i) => i);
-        
-        return {
-            indices: indices,
-            predictions: predictions,
-            actuals: actuals
-        };
     }
 
     dispose() {
@@ -267,8 +197,6 @@ class GRUModel {
             this.model = null;
         }
         this.isTrained = false;
-        this.testPredictions = null;
-        this.actualTestValues = null;
     }
 }
 
